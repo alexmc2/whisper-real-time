@@ -1,0 +1,23 @@
+source whisper_venv/bin/activate
+python3 transcribe_demo.py --model tiny --default_microphone pipewire
+python3 transcribe_demo.py --model base --default_microphone pipewire
+python3 transcribe_demo.py --model small --default_microphone pipewire
+python3 transcribe_demo.py --model medium --default_microphone pipewire
+python3 transcribe_demo.py --model large --default_microphone pipewire
+
+
+python3 web_output.py --model tiny --default_microphone pipewire
+python3 web_output.py --model base --default_microphone pipewire
+python3 web_output.py --model small --default_microphone pipewire
+python3 web_output.py --model medium --default_microphone pipewire
+python3 web_output.py --model large --default_microphone pipewire
+
+http://127.0.0.1:5000
+
+
+
+# First run the transcription in one terminal
+python transcribe_demo.py --model tiny
+
+# Then monitor in another terminal
+python monitor_resources.py --name python3
