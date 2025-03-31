@@ -255,8 +255,26 @@ def update_transcription():
 
 
 def run_flask():
-    app.run(debug=False, host='0.0.0.0', port=5000, threaded=True,
-            processes=1, use_reloader=False)
+    global app
+    # Try to run the server, handle port-in-use errors gracefully
+    port = app.config.get('PORT', 5000)
+    max_attempts = 10
+
+    for attempt in range(max_attempts):
+        try:
+            app.run(debug=False, host='0.0.0.0', port=port, threaded=True,
+                    processes=1, use_reloader=False)
+            break  # If successful, exit the loop
+        except OSError as e:
+            if "Address already in use" in str(e) and attempt < max_attempts - 1:
+                print(f"Port {port} is busy, trying {port + 1}...")
+                port += 1
+                app.config['PORT'] = port  # Update the port
+            else:
+                print(f"Failed to start web server: {e}")
+                print(
+                    "Try manually killing the process using the port with 'sudo fuser -k PORT/tcp'")
+                break
 
 
 def main():
@@ -277,17 +295,22 @@ def main():
                         help="Number of CPU threads to use for inference.")
     parser.add_argument("--sleep_duration", default=0.25, type=float,
                         help="Sleep time in main loop when idle (seconds).")
+    parser.add_argument("--port", default=5000, type=int,
+                        help="Port to run the web server on.")
     if 'linux' in platform:
         parser.add_argument("--default_microphone", default='default',
                             help="Default microphone name. Use 'list' to show all.", type=str)
     args = parser.parse_args()
+
+    # Set initial port
+    app.config['PORT'] = args.port
 
     # Start Flask in a separate thread
     flask_thread = threading.Thread(target=run_flask, daemon=True)
     flask_thread.start()
 
     print("=" * 80)
-    print("Web interface running at: http://localhost:5000")
+    print(f"Web interface running at: http://localhost:{app.config['PORT']}")
     print("Open that URL in your browser to see and copy transcriptions.")
     print("=" * 80)
 
@@ -422,7 +445,8 @@ def main():
                     print("\nTranscription so far:")
                     for line in transcriptions:
                         print(line)
-                    print("\nVisit http://localhost:5000 for the web interface.")
+                    print(
+                        f"\nVisit http://localhost:{app.config['PORT']} for the web interface.")
 
                 gc.collect()
 
