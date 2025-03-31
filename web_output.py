@@ -27,78 +27,157 @@ HTML_TEMPLATE = '''
 <!DOCTYPE html>
 <html>
 <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Whisper Transcription</title>
     <style>
+        /* Reset */
+        *, *::before, *::after {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+        
+        /* Main layout */
+        html {
+            overflow-x: hidden;
+            width: 100vw;
+            height: 100%;
+        }
+        
         body {
             font-family: Arial, sans-serif;
-            margin: 20px;
+            width: 100vw;
+            max-width: 100vw;
+            overflow-x: hidden;
+            min-height: 100%;
+            position: relative;
+            padding: 20px;
+            color: #333;
             line-height: 1.6;
         }
+        
+        /* Container */
+        .main-container {
+            width: 100%;
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 0;
+            position: relative;
+        }
+        
+        /* Header */
         h1 {
-            color: #333;
+            font-size: 24px;
             border-bottom: 1px solid #ddd;
             padding-bottom: 10px;
+            margin-bottom: 20px;
+            width: 100%;
+            word-break: break-word;
         }
+        
+        /* Controls */
+        .controls {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+            margin-bottom: 20px;
+            width: 100%;
+        }
+        
+        button {
+            background-color: #4CAF50;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            padding: 10px 15px;
+            cursor: pointer;
+            font-size: 14px;
+            transition: background-color 0.2s;
+        }
+        
+        button:hover {
+            background-color: #45a049;
+        }
+        
+        button.blue {
+            background-color: #2196F3;
+        }
+        
+        button.blue:hover {
+            background-color: #0b7dda;
+        }
+        
+        button.red {
+            background-color: #f44336;
+        }
+        
+        button.red:hover {
+            background-color: #da190b;
+        }
+        
+        /* Status message */
+        .status {
+            color: #666;
+            font-style: italic;
+            margin-bottom: 10px;
+            font-size: 14px;
+            width: 100%;
+            word-break: break-word;
+        }
+        
+        /* Transcript textarea */
         #transcription {
-            display: block;
             width: 100%;
             height: 300px;
             background-color: #f9f9f9;
             border: 1px solid #ddd;
             border-radius: 5px;
-            padding: 20px;
-            margin: 20px 0;
-            font-size: 1em;
-            line-height: 1.6;
+            padding: 15px;
+            font-size: 16px;
             resize: vertical;
+            font-family: inherit;
+            line-height: 1.6;
+            margin-bottom: 20px;
         }
-        .controls {
-            margin: 20px 0;
-        }
-        button {
-            padding: 10px 15px;
-            background-color: #4CAF50;
-            color: white;
-            border: none;
-            border-radius: 4px;
-            cursor: pointer;
-            margin-right: 10px;
-        }
-        button:hover {
-            background-color: #45a049;
-        }
-        button.blue {
-            background-color: #2196F3;
-        }
-        button.blue:hover {
-            background-color: #0b7dda;
-        }
-        button.red {
-            background-color: #f44336;
-        }
-        button.red:hover {
-            background-color: #da190b;
-        }
-        .status {
-            color: #666;
-            font-style: italic;
-            margin-top: 10px;
-        }
+        
         .edit-mode {
             border: 2px solid #2196F3 !important;
+        }
+        
+        /* Responsive adjustments */
+        @media screen and (max-width: 600px) {
+            body {
+                padding: 10px;
+            }
+            
+            h1 {
+                font-size: 20px;
+            }
+            
+            button {
+                padding: 8px 12px;
+                font-size: 13px;
+            }
         }
     </style>
 </head>
 <body>
-    <h1>Whisper Real-Time Transcription</h1>
-    <div class="controls">
-        <button id="copyBtn">Copy All Text</button>
-        <button id="editBtn" class="blue">Edit Text</button>
-        <button id="saveBtn" class="blue" style="display:none">Save Changes</button>
-        <button id="clearBtn" class="red">Clear All</button>
+    <div class="main-container">
+        <h1>Whisper Real-Time Transcription</h1>
+        
+        <div class="controls">
+            <button id="copyBtn">Copy All Text</button>
+            <button id="editBtn" class="blue">Edit Text</button>
+            <button id="saveBtn" class="blue" style="display:none">Save Changes</button>
+            <button id="clearBtn" class="red">Clear All</button>
+        </div>
+        
+        <div id="status" class="status"></div>
+        
+        <textarea id="transcription" readonly></textarea>
     </div>
-    <div id="status" class="status"></div>
-    <textarea id="transcription" readonly></textarea>
+
     <script>
         let isEditing = false;
         let autoUpdate = true;
