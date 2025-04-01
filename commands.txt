@@ -11,6 +11,10 @@ python3 web_output.py --model base --default_microphone pipewire
 python3 web_output.py --model small --default_microphone pipewire
 python3 web_output.py --model medium --default_microphone pipewire
 python3 web_output.py --model large --default_microphone pipewire
+python3 web_output.py --model large-v3-turbo --default_microphone pipewire
+
+
+
 
 http://127.0.0.1:5000
 

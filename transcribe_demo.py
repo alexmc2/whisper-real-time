@@ -11,12 +11,13 @@ import numpy as np
 import speech_recognition as sr
 import torch
 import whisper
+from transformers import AutoModelForSpeechSeq2Seq, AutoProcessor, pipeline # Added for HF
 
 
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--model", default="medium", help="Model to use",
-                        choices=["tiny", "base", "small", "medium", "large"])
+                        choices=["tiny", "base", "small", "medium", "large", "large-v3-turbo"]) # Added large-v3-turbo
     parser.add_argument("--non_english", action='store_true',
                         help="Don't use the english model.")
     parser.add_argument("--energy_threshold", default=1000,
@@ -56,10 +57,65 @@ def main():
     else:
         source = sr.Microphone(sample_rate=16000)
 
-    model_name = args.model
-    if model_name != "large" and not args.non_english:
-        model_name += ".en"
-    audio_model = whisper.load_model(model_name)
+    # Determine device and dtype
+    device = "cuda:0" if torch.cuda.is_available() else "cpu" # Use cuda:0 for HF compatibility
+    torch_dtype = torch.float16 if torch.cuda.is_available() else torch.float32
+
+    # Initialize model/pipeline variables
+    audio_model = None
+    hf_pipe = None
+    # loaded_model_name = args.model # Removed unused variable
+
+    if args.model == "large-v3-turbo":
+        print(f"Loading Hugging Face model openai/whisper-{args.model}...")
+        model_id = f"openai/whisper-{args.model}"
+        try:
+            hf_model = AutoModelForSpeechSeq2Seq.from_pretrained(
+                model_id,
+                torch_dtype=torch_dtype,
+                low_cpu_mem_usage=True,
+                use_safetensors=True
+            )
+            hf_model.to(device)
+            processor = AutoProcessor.from_pretrained(model_id)
+            hf_pipe = pipeline(
+                "automatic-speech-recognition",
+                model=hf_model,
+                tokenizer=processor.tokenizer,
+                feature_extractor=processor.feature_extractor,
+                torch_dtype=torch_dtype,
+                device=device,
+            )
+            print(f"Hugging Face model {model_id} loaded on {device}")
+            # loaded_model_name = model_id # Removed unused variable
+        except Exception as e:
+            print(f"Error loading Hugging Face model {model_id}: {e}")
+            print("Please ensure 'transformers', 'torch', 'accelerate', and 'safetensors' are installed correctly.")
+            return # Exit main if HF model fails to load
+
+    else:
+        # Load standard Whisper model
+        print("Loading standard Whisper model, please wait...")
+        model_name = args.model
+        # Apply .en suffix logic only for standard models, exclude large models like large-v2, large-v3
+        if model_name not in ["large", "large-v2", "large-v3"] and not args.non_english:
+             model_name += ".en"
+        try:
+            audio_model = whisper.load_model(model_name)
+             # Use the whisper lib device format ("cuda" or "cpu")
+            whisper_device = "cuda" if torch.cuda.is_available() else "cpu"
+            audio_model.to(whisper_device)
+            print(f"Standard Whisper model {model_name} loaded on {whisper_device}")
+            # loaded_model_name = model_name # Removed unused variable
+        except Exception as e:
+            print(f"Error loading standard Whisper model {model_name}: {e}")
+            print("Please ensure 'openai-whisper' is installed correctly.")
+            return # Exit main if standard model fails to load
+
+    # Check if any model loaded successfully
+    if audio_model is None and hf_pipe is None:
+        print("Failed to load any transcription model. Exiting.")
+        return
 
     record_timeout = args.record_timeout
     phrase_timeout = args.phrase_timeout
@@ -95,10 +151,26 @@ def main():
                 audio_np = np.frombuffer(
                     audio_data, dtype=np.int16).astype(np.float32) / 32768.0
 
-                result = audio_model.transcribe(
-                    audio_np, fp16=torch.cuda.is_available()
-                )
-                text = result['text'].strip()
+                text = "" # Initialize text
+                if hf_pipe:
+                    # Use Hugging Face pipeline
+                    # Pipeline handles device, dtype, language automatically
+                    result = hf_pipe(audio_np.copy()) # Pass a copy
+                    text = result['text'].strip()
+                elif audio_model:
+                    # Use standard Whisper model
+                    # Use the correct device name for standard whisper check ("cuda" or "cpu")
+                    whisper_device = "cuda" if torch.cuda.is_available() else "cpu"
+                    result = audio_model.transcribe(
+                        audio_np,
+                        fp16=(whisper_device == "cuda"),
+                        language=None if args.non_english else "en" # Match web_output logic
+                    )
+                    text = result['text'].strip()
+                else:
+                    # Should not happen if loading checks passed
+                    print("Error: No transcription model available.")
+                    continue # Skip this loop iteration
 
                 if phrase_complete:
                     transcription.append(text)
