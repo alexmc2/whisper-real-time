@@ -159,6 +159,39 @@ HTML_TEMPLATE = '''
             font-size: 14px;
             width: 100%;
             word-break: break-word;
+            min-height: 3em; /* Fixed height to prevent layout shifts */
+            display: flex;
+            align-items: center;
+            background-color: rgba(0,0,0,0.02);
+            border-radius: 4px;
+            padding: 0 10px;
+        }
+        
+        .status-text {
+            padding: 10px 0;
+        }
+        
+        /* Format selection dropdown */
+        .format-selection {
+            display: flex;
+            align-items: center;
+            margin-top: 10px;
+            margin-bottom: 15px;
+        }
+        
+        .format-selection select {
+            padding: 8px 12px;
+            border-radius: 4px;
+            border: 1px solid #ddd;
+            background-color: #f9f9f9;
+            margin-left: 10px;
+            font-size: 14px;
+        }
+        
+        .format-selection label {
+            font-size: 14px;
+            font-weight: bold;
+            color: #333;
         }
         
         /* Transcript textarea */
@@ -213,7 +246,20 @@ HTML_TEMPLATE = '''
             <button id="clearBtn" class="red">Clear All</button>
         </div>
         
-        <div id="status" class="status"></div>
+        <div class="format-selection">
+            <label for="formatMode">Cleaning Format:</label>
+            <select id="formatMode">
+                <option value="standard">Standard Cleaning</option>
+                <option value="formal">Formal Language</option>
+                <option value="concise">Concise</option>
+                <option value="paragraph">Paragraph Structure</option>
+                <option value="instructions">Process as Instructions</option>
+            </select>
+        </div>
+        
+        <div id="status" class="status">
+            <div id="statusText" class="status-text"></div>
+        </div>
         
         <textarea id="transcription" readonly></textarea>
     </div>
@@ -224,7 +270,7 @@ HTML_TEMPLATE = '''
         const transcriptionEl = document.getElementById('transcription');
         const editBtn = document.getElementById('editBtn');
         const saveBtn = document.getElementById('saveBtn');
-        const statusEl = document.getElementById('status');
+        const statusEl = document.getElementById('statusText');
         
         // Initial load
         updateTranscription();
@@ -277,82 +323,109 @@ HTML_TEMPLATE = '''
         // Clear
         document.getElementById('clearBtn').addEventListener('click', function() {
             if (confirm('Are you sure you want to clear all transcription text?')) {
-                fetch('/clear_transcription', { method: 'POST' })
-                    .then(() => {
-                        transcriptionEl.value = '';
-                        document.getElementById('undoCleanBtn').style.display = 'none'; // Hide undo button
-                        document.getElementById('resetCleanBtn').style.display = 'none'; // Hide reset button
-                        showStatus('Transcription cleared.');
-                    })
-                    .catch(error => {
-                        console.error('Error:', error);
-                        showStatus('Error clearing transcription.');
-                    });
+                fetch('/clear_transcription', { 
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({})
+                })
+                .then(() => {
+                    transcriptionEl.value = '';
+                    document.getElementById('undoCleanBtn').style.display = 'none'; // Hide undo button
+                    document.getElementById('resetCleanBtn').style.display = 'none'; // Hide reset button
+                    showStatus('Transcription cleared.');
+                })
+                .catch(error => {
+                    console.error('Error:', error);
+                    showStatus('Error clearing transcription.');
+                });
             }
         });
         
         // Clean
         document.getElementById('cleanBtn').addEventListener('click', function() {
-            showStatus('Cleaning transcription...');
-            fetch('/clean_transcription', { method: 'POST' })
-                .then(response => response.json())
-                .then(data => {
-                    if (data.status === 'success') {
-                        showStatus('Transcription cleaned successfully!');
-                        
-                        document.getElementById('undoCleanBtn').style.display = 'inline-block'; // Show undo button
-                        document.getElementById('resetCleanBtn').style.display = 'inline-block'; // Show reset button
-                        // No need to disable the clean button - we want to allow multiple cleanings
-                        updateTranscription(); // Refresh to show cleaned text
-                    } else {
-                        showStatus(data.message || 'Error cleaning transcription.');
-                    }
+            const formatMode = document.getElementById('formatMode').value;
+            showStatus(`Cleaning transcription with ${formatMode} formatting...`);
+            
+            fetch('/clean_transcription', { 
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({ 
+                    formatting_mode: formatMode 
                 })
-                .catch(error => {
-                    console.error('Error:', error);
-                    showStatus('Error cleaning transcription. Please check if API key is set.');
-                });
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.status === 'success') {
+                    showStatus(`Transcription cleaned successfully with ${formatMode} formatting!`);
+                    
+                    document.getElementById('undoCleanBtn').style.display = 'inline-block'; // Show undo button
+                    document.getElementById('resetCleanBtn').style.display = 'inline-block'; // Show reset button
+                    updateTranscription(); // Refresh to show cleaned text
+                } else {
+                    showStatus(data.message || 'Error cleaning transcription.');
+                }
+            })
+            .catch(error => {
+                console.error('Error:', error);
+                showStatus('Error cleaning transcription. Please check if API key is set.');
+            });
         });
         
         // Undo Clean
         document.getElementById('undoCleanBtn').addEventListener('click', function() {
             showStatus('Undoing cleaning...');
-            fetch('/undo_cleaning', { method: 'POST' })
-                .then(response => response.json())
-                .then(data => {
-                    if (data.status === 'success') {
-                        showStatus('Reverted to original transcription. You can clean again or continue from here.');
-                        // Keep the undo button visible since we can undo multiple times now
-                        document.getElementById('resetCleanBtn').style.display = 'inline-block'; // Show reset button
-                        updateTranscription(); // Refresh to show original text
-                    } else {
-                        showStatus(data.message || 'Error undoing changes.');
-                    }
-                })
-                .catch(error => {
-                    console.error('Error:', error);
-                    showStatus('Error undoing changes.');
-                });
+            fetch('/undo_cleaning', { 
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({}) 
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.status === 'success') {
+                    showStatus('Reverted to original transcription. You can clean again or continue from here.');
+                    // Keep the undo button visible since we can undo multiple times now
+                    document.getElementById('resetCleanBtn').style.display = 'inline-block'; // Show reset button
+                    updateTranscription(); // Refresh to show original text
+                } else {
+                    showStatus(data.message || 'Error undoing changes.');
+                }
+            })
+            .catch(error => {
+                console.error('Error:', error);
+                showStatus('Error undoing changes.');
+            });
         });
         
         // Reset Cleaning History
         document.getElementById('resetCleanBtn').addEventListener('click', function() {
             showStatus('Resetting cleaning history...');
-            fetch('/reset_cleaning_history', { method: 'POST' })
-                .then(response => response.json())
-                .then(data => {
-                    if (data.status === 'success') {
-                        showStatus('Cleaning history reset.');
-                        document.getElementById('undoCleanBtn').style.display = 'none'; // Hide undo button
-                        document.getElementById('resetCleanBtn').style.display = 'none'; // Hide reset button
-                    } else {
-                        showStatus(data.message || 'Error resetting cleaning history.');
-                    }
-                })
-                .catch(error => {
-                    console.error('Error:', error);
-                    showStatus('Error resetting cleaning history.');
-                });
+            fetch('/reset_cleaning_history', { 
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({})
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.status === 'success') {
+                    showStatus('Cleaning history reset.');
+                    document.getElementById('undoCleanBtn').style.display = 'none'; // Hide undo button
+                    document.getElementById('resetCleanBtn').style.display = 'none'; // Hide reset button
+                } else {
+                    showStatus(data.message || 'Error resetting cleaning history.');
+                }
+            })
+            .catch(error => {
+                console.error('Error:', error);
+                showStatus('Error resetting cleaning history.');
+            });
         });
         
         // Edit
@@ -489,6 +562,8 @@ def get_transcription():
 @app.route('/clear_transcription', methods=['POST'])
 def clear_transcription():
     global transcriptions, original_transcriptions
+    # Silently handle JSON or non-JSON requests
+    _ = request.get_json(silent=True)
     transcriptions = []
     original_transcriptions = []  # Also clear original transcriptions
     return jsonify({'status': 'success'})
@@ -516,6 +591,16 @@ def clean_transcription():
         return jsonify({'status': 'error', 'message': 'Gemini API key not set.'})
 
     try:
+        # Get formatting mode if provided
+        data = request.get_json(silent=True) or {}
+        formatting_mode = data.get('formatting_mode', 'standard')
+
+        # If the request did not have JSON content type, fall back to standard mode
+        if data == {}:
+            logger.warning(
+                "Request to clean_transcription did not have JSON content type, using standard mode")
+            formatting_mode = 'standard'
+
         if not transcriptions or len(transcriptions) == 0:
             return jsonify({'status': 'error', 'message': 'No transcription to clean.'})
 
@@ -527,7 +612,8 @@ def clean_transcription():
         text_to_clean = "\n".join(transcriptions)
 
         # Log what we're trying to do
-        logger.info("Attempting to clean transcription with Gemini API")
+        logger.info(
+            f"Attempting to clean transcription with Gemini API (mode: {formatting_mode})")
 
         # Try different model names
         model_names_to_try = [
@@ -552,32 +638,93 @@ def clean_transcription():
                     HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT: HarmBlockThreshold.BLOCK_NONE,
                 }
 
-                # Set up the model with safety settings
+                # Set up the model with safety settings and reduced temperature for more consistent outputs
                 model = genai.GenerativeModel(
                     model_name=model_name,
                     safety_settings=safety_settings,
-                    generation_config={"temperature": 0.2}
+                    generation_config={
+                        "temperature": 0.1,  # Lower temperature for more precise formatting
+                        "top_p": 0.95,       # Slightly reduce top_p for more predictable outputs
+                        "top_k": 40,         # Standard top_k
+                        "max_output_tokens": 8192,  # Allow longer outputs for detailed cleaning
+                    }
                 )
 
                 # Create the prompt for aggressive cleaning
+                formatting_instructions = ""
+                if formatting_mode == 'formal':
+                    formatting_instructions = """
+                    ADDITIONAL FORMATTING: Please make the text more formal:
+                    - Use proper grammar and complete sentences
+                    - Remove casual language and slang
+                    - Maintain a professional tone throughout
+                    - Structure the content with clear paragraph breaks
+                    - Use more sophisticated vocabulary where appropriate
+                    """
+                elif formatting_mode == 'concise':
+                    formatting_instructions = """
+                    ADDITIONAL FORMATTING: Please make the text more concise:
+                    - Remove all unnecessary words and phrases
+                    - Condense multiple sentences into shorter, clearer statements
+                    - Focus on key information only
+                    - Aim to reduce the overall length by at least 30% while preserving meaning
+                    - Use shorter sentences and simpler structures
+                    """
+                elif formatting_mode == 'paragraph':
+                    formatting_instructions = """
+                    ADDITIONAL FORMATTING: Please format the text into proper paragraphs:
+                    - Group related sentences into coherent paragraphs
+                    - Add paragraph breaks where topics change
+                    - Each paragraph should represent a complete thought or topic
+                    - Aim for 3-5 sentences per paragraph where appropriate
+                    - Remove sentence fragments that break paragraph flow
+                    """
+                elif formatting_mode == 'instructions':
+                    formatting_instructions = """
+                    ADDITIONAL FORMATTING: Format this as spoken instructions or directions:
+                    - Identify key steps and number them if appropriate
+                    - Organize information in a sequential, logical order
+                    - Make instructions clear and actionable
+                    - Use imperative language ("Do this" rather than "You should do this")
+                    - Separate different sections with clear breaks
+                    - Focus on preserving the step-by-step nature of the content
+                    - Break complex instructions into simpler steps
+                    """
+
                 prompt = f"""
-                    Clean up the following transcription by:
+                    Clean up the following speech transcription by:
                     1. AGGRESSIVELY removing repeated phrases or words that appear consecutively or across line breaks
                     2. Removing sequences of identical phrases like "Thank you. Thank you. Thank you."
                     3. Removing isolated single words that are likely speech fragments (e.g., standalone "you")
                     4. Removing filler words like "um", "uh", "like", etc.
                     5. Consolidating multiple consecutive identical phrases into a single instance
                     6. Preserving one instance of meaningful phrases even if repeated
-                    7. Join sentences that end unnaturally with a period with the next sentence
-                    8. Replace uppercase letters with lowercase letters if they occur unnaturally in the middle of a sentence
+                    7. IMPROVING PUNCTUATION: Add proper periods, commas, question marks where appropriate
+                    8. FIXING CAPITALIZATION: Ensure sentences begin with capital letters and proper nouns are capitalized
+                    9. Ensuring proper spacing after punctuation marks (one space after a period, comma, etc.)
                     
-                    IMPORTANT RULES:
+                    {formatting_instructions}
+                    
+                    IMPORTANT RULES FOR PUNCTUATION:
+                    - Add periods at the end of complete thoughts
+                    - Add question marks for questions
+                    - Add commas for natural pauses or to separate clauses
+                    - Ensure proper capitalization at the start of sentences
+                    - DO NOT over-punctuate with excessive commas or periods
+                    - Make sure each sentence has proper subject-verb structure when possible
+                    - Maintain the original speaker's style but with better punctuation
+                    
+                    IMPORTANT GENERAL RULES:
+                    - ONLY return text in the SAME LANGUAGE as the original transcription
+                    - NEVER translate or add foreign language text
+                    - DO NOT add new content or change the meaning of what was said
+                    - DO NOT rewrite or rephrase the content beyond correcting punctuation and removing repetition
                     - Treat each line break as a potential silence marker in speech
                     - When the same phrase repeats across multiple lines, keep only ONE instance
-                    - DO NOT add new content or change the meaning of what was said
-                    - DO NOT rewrite or rephrase the content beyond removing repetitions
+                    - Remove any single-word lines that are likely fragments like just "you" or "the"
                     - If a phrase is repeated more than twice consecutively, keep only ONE instance
-                    - Remove any single-word lines that are fragments like just "you" or "the"
+                    - Remove any fragments or incomplete thoughts that don't contribute to meaning
+                    - If you see the word "Gemini" followed by instructions (like "Gemini, make this formal"), FOLLOW those instructions and apply them to the nearby content, then remove the instruction itself
                     
                     Here is the transcription to clean:
                     {text_to_clean}
@@ -607,16 +754,154 @@ def clean_transcription():
         cleaned_lines = [
             line for line in cleaned_text.split('\n') if line.strip()]
 
-        # Additional post-processing to remove any remaining single-word fragments
-        filtered_lines = []
+        # Additional post-processing for better punctuation and text cleaning
+        improved_lines = []
         for line in cleaned_lines:
             # Skip single-word lines that are likely fragments
             if len(line.split()) == 1 and len(line) < 5 and line.lower() in ["you", "the", "a", "and", "but", "or", "so", "ah", "oh", "uh", "um"]:
                 continue
-            filtered_lines.append(line)
 
-        transcriptions = filtered_lines if filtered_lines else [
+            # Fix common transcription issues
+            processed_line = line
+
+            # Remove specific problematic phrases that often appear incorrectly in whisper outputs
+            # These are typically not intentional foreign language but transcription artifacts
+            problematic_phrases = [
+                "продолжение следует",  # Russian "to be continued"
+                "подписывайтесь на канал",  # Russian "subscribe to the channel"
+                "спасибо за просмотр",  # Russian "thanks for watching"
+                "продолжение в следующей",  # Russian "continued in the next"
+                "конец фильма",  # Russian "end of film"
+                "перерыв",  # Russian "break/intermission"
+            ]
+
+            # Common end markers that often appear incorrectly
+            end_markers = [
+                "...",  # Ellipsis (can appear as trailing dots)
+                "…",    # Unicode ellipsis
+                "..!",  # Strange combinations
+                "!..",
+                "!...",
+                "...!",
+                ".....",
+                "......",
+            ]
+
+            # Handle excessive ellipsis and trailing dots
+            for marker in end_markers:
+                # Only remove if at the end of line or standalone
+                if processed_line.endswith(marker):
+                    # Replace with a single period if it's at the end of a sentence
+                    processed_line = processed_line[:-len(marker)] + "."
+                    logger.debug(f"Replaced end marker {marker} with period")
+                elif processed_line == marker:
+                    # Skip entirely if it's just an ellipsis
+                    processed_line = ""
+                    logger.debug(f"Removed standalone marker {marker}")
+                    break
+
+            # Process problematic phrases without using the unused variable
+            for phrase in problematic_phrases:
+                if phrase.lower() in processed_line.lower():
+                    # Only flag as problematic if:
+                    # 1. This phrase is the majority of the line, or
+                    # 2. It appears at the start or end of the line, or
+                    # 3. It appears as a standalone item
+
+                    # Calculate what percentage of the line this phrase represents
+                    phrase_words = len(phrase.split())
+                    line_words = len(processed_line.split())
+
+                    phrase_position_start = processed_line.lower().find(phrase.lower())
+                    phrase_position_end = phrase_position_start + len(phrase)
+
+                    # Check if phrase is at start or end of line (with some tolerance)
+                    at_start = phrase_position_start <= 5  # Within first 5 chars
+                    at_end = phrase_position_end >= (
+                        len(processed_line) - 5)  # Within last 5 chars
+
+                    # Check if phrase is majority of line content
+                    is_majority = phrase_words / max(1, line_words) > 0.5
+
+                    # Skip deletion if this appears to be intentional foreign language content
+                    # (e.g., part of a longer paragraph or surrounded by similar characters)
+                    is_intentional = False
+
+                    # Check if surrounded by similar script (Cyrillic in this case)
+                    if phrase_position_start > 0 and phrase_position_end < len(processed_line):
+                        # Check characters before and after
+                        char_before = processed_line[phrase_position_start - 1]
+                        char_after = processed_line[phrase_position_end] if phrase_position_end < len(
+                            processed_line) else ""
+
+                        # Simple detection of Cyrillic script before and after
+                        def is_cyrillic(
+                            c): return 'а' <= c.lower() <= 'я' if c else False
+
+                        # If surrounded by similar script, likely intentional
+                        if is_cyrillic(char_before) and is_cyrillic(char_after):
+                            is_intentional = True
+
+                    # Only remove if meets our criteria and doesn't look intentional
+                    if (at_start or at_end or is_majority) and not is_intentional:
+                        logger.info(
+                            f"Removing problematic artifact phrase: '{phrase}' from line")
+                        # Remove the phrase
+                        processed_line = processed_line.lower().replace(phrase.lower(), "").strip()
+
+            # Skip empty lines after processing
+            if not processed_line.strip():
+                continue
+
+            # Ensure first letter is capitalized if line isn't already starting with a capital
+            if processed_line and not processed_line[0].isupper() and processed_line[0].isalpha():
+                processed_line = processed_line[0].upper() + processed_line[1:]
+
+            # Ensure line ends with proper punctuation if it doesn't already
+            if processed_line and processed_line[-1] not in ['.', '!', '?', ':', ';']:
+                # Check if the line seems like a question (starting with who, what, where, when, why, how)
+                question_starters = ['who', 'what', 'where', 'when', 'why', 'how',
+                                     'is', 'are', 'was', 'were', 'will', 'can', 'could', 'should', 'would']
+                first_word = processed_line.split()[0].lower(
+                ) if processed_line.split() else ""
+
+                if first_word in question_starters and '?' not in processed_line:
+                    processed_line += '?'
+                else:
+                    processed_line += '.'
+
+            # Fix spacing after punctuation
+            for punct in ['.', ',', '!', '?', ':', ';']:
+                processed_line = processed_line.replace(
+                    f'{punct}', f'{punct} ')
+                # Fix double spaces
+                while '  ' in processed_line:
+                    processed_line = processed_line.replace('  ', ' ')
+
+            # Fix spaces before punctuation
+            for punct in ['.', ',', '!', '?', ':', ';']:
+                processed_line = processed_line.replace(
+                    f' {punct}', f'{punct}')
+
+            # Trim any extra spaces
+            processed_line = processed_line.strip()
+
+            improved_lines.append(processed_line)
+
+        transcriptions = improved_lines if improved_lines else [
             "[Cleaned transcription - no significant content detected]"]
+
+        # Log before and after samples for comparison
+        if logger.isEnabledFor(logging.DEBUG) and cleaned_text:
+            original_sample = '\n'.join(original_transcriptions[:3] if len(
+                original_transcriptions) > 3 else original_transcriptions)
+            cleaned_sample = '\n'.join(transcriptions[:3] if len(
+                transcriptions) > 3 else transcriptions)
+
+            logger.debug("==== CLEANING COMPARISON (SAMPLE) ====")
+            logger.debug(f"BEFORE CLEANING:\n{original_sample}\n")
+            logger.debug(f"AFTER CLEANING:\n{cleaned_sample}")
+            logger.debug("====================================")
 
         logger.info(
             f"Successfully cleaned transcription using model: {success_model}")
@@ -630,6 +915,8 @@ def clean_transcription():
 @app.route('/undo_cleaning', methods=['POST'])
 def undo_cleaning():
     global transcriptions, original_transcriptions
+    # Silently handle JSON or non-JSON requests
+    _ = request.get_json(silent=True)
     try:
         if not original_transcriptions or len(original_transcriptions) == 0:
             return jsonify({'status': 'error', 'message': 'No original transcription to restore.'})
@@ -648,6 +935,8 @@ def undo_cleaning():
 @app.route('/reset_cleaning_history', methods=['POST'])
 def reset_cleaning_history():
     global original_transcriptions
+    # Silently handle JSON or non-JSON requests
+    _ = request.get_json(silent=True)
     try:
         original_transcriptions = []  # Clear the original transcriptions
         return jsonify({'status': 'success'})
@@ -887,146 +1176,160 @@ def main():
             print("Please ensure 'transformers', 'torch', 'accelerate', and 'safetensors' are installed correctly.")
             return  # Exit main if HF model fails to load
 
-        else:
-            # Load standard Whisper model
-            print("Loading standard Whisper model, please wait...")
-            model_name = args.model
-            # Apply .en suffix logic only for standard models, exclude large models like large-v2, large-v3
-            if model_name not in ["large", "large-v2", "large-v3"] and not args.non_english:
-                model_name += ".en"
-            try:
-                audio_model = whisper.load_model(model_name)
-                # Use the whisper lib device format ("cuda" or "cpu")
-                whisper_device = "cuda" if torch.cuda.is_available() else "cpu"
-                audio_model.to(whisper_device)
-                print(
-                    f"Standard Whisper model {model_name} loaded on {whisper_device}")
-                # loaded_model_name = model_name # Removed unused variable
-            except Exception as e:
-                print(
-                    f"Error loading standard Whisper model {model_name}: {e}")
-                print("Please ensure 'openai-whisper' is installed correctly.")
-                return  # Exit main if standard model fails to load
+    # Only try to load standard Whisper model if we haven't already loaded a HF model
+    elif not hf_pipe:  # Add this "elif" instead of "else" to prevent double loading
+        # Load standard Whisper model
+        print("Loading standard Whisper model, please wait...")
+        model_name = args.model
+        # Apply .en suffix logic only for standard models, exclude large models like large-v2, large-v3
+        if model_name not in ["large", "large-v2", "large-v3"] and not args.non_english:
+            model_name += ".en"
+        try:
+            audio_model = whisper.load_model(model_name)
+            # Use the whisper lib device format ("cuda" or "cpu")
+            whisper_device = "cuda" if torch.cuda.is_available() else "cpu"
+            audio_model.to(whisper_device)
+            print(
+                f"Standard Whisper model {model_name} loaded on {whisper_device}")
+            # loaded_model_name = model_name # Removed unused variable
+        except Exception as e:
+            print(f"Error loading standard Whisper model {model_name}: {e}")
+            print("Please ensure 'openai-whisper' is installed correctly.")
+            return  # Exit main if standard model fails to load
 
-        # Check if any model loaded successfully
-        if audio_model is None and hf_pipe is None:
-            print("Failed to load any transcription model. Exiting.")
-            return
+    # Check if any model loaded successfully
+    if audio_model is None and hf_pipe is None:
+        print("Failed to load any transcription model. Exiting.")
+        return
 
-        record_timeout = args.record_timeout
-        phrase_timeout = args.phrase_timeout
+    record_timeout = args.record_timeout
+    phrase_timeout = args.phrase_timeout
 
-        print("Adjusting for ambient noise; please stand by...")
-        with source:
-            recorder.adjust_for_ambient_noise(source)
-        print("Done. Listening...")
+    print("Adjusting for ambient noise; please stand by...")
+    try:
+        # Fix for the microphone initialization issue - create a new context and handle exceptions
+        try:
+            with source:
+                recorder.adjust_for_ambient_noise(source)
+                print("Done. Listening...")
+        except Exception as e:
+            print(f"Error during ambient noise adjustment: {e}")
+            print("Trying with default settings...")
+            # If ambient noise adjustment fails, continue with default settings
 
         def record_callback(_, audio: sr.AudioData) -> None:
             data = audio.get_raw_data()
             data_queue.put(data)
 
+        # Add a small delay before starting the microphone listener
+        sleep(0.5)  # Wait for 0.5 seconds to ensure the microphone is ready
+
         # We do NOT store the returned function -> no Ruff unused-variable issue
         recorder.listen_in_background(
             source, record_callback, phrase_time_limit=record_timeout
         )
+    except Exception as e:
+        print(f"Error initializing microphone: {e}")
+        print("Please try running the program again.")
+        return
 
-        idle_count = 0
+    idle_count = 0
 
-        while True:
-            try:
-                now = datetime.now(timezone.utc)
-                if not data_queue.empty():
-                    idle_count = 0
-                    phrase_complete = False
-                    # If enough time has passed between recordings, consider a new line
-                    if phrase_time and now - phrase_time > timedelta(seconds=phrase_timeout):
-                        phrase_complete = True
-                    phrase_time = now
+    while True:
+        try:
+            now = datetime.now(timezone.utc)
+            if not data_queue.empty():
+                idle_count = 0
+                phrase_complete = False
+                # If enough time has passed between recordings, consider a new line
+                if phrase_time and now - phrase_time > timedelta(seconds=phrase_timeout):
+                    phrase_complete = True
+                phrase_time = now
 
-                    audio_data = b''.join(data_queue.queue)
-                    data_queue.queue.clear()
+                audio_data = b''.join(data_queue.queue)
+                data_queue.queue.clear()
 
-                    # Skip very small chunks (likely silence)
-                    if len(audio_data) < 8000:
-                        if debug_mode:
-                            print("Skipping small audio chunk (likely silence).")
-                        continue
-
-                    # Convert raw data to float32
-                    audio_np = np.frombuffer(
-                        audio_data, dtype=np.int16).astype(np.float32) / 32768.0
-
-                    text = ""  # Initialize text
-                    if hf_pipe:
-                        # Use Hugging Face pipeline
-                        # The pipeline handles device and dtype automatically based on setup
-                        # Language is also typically handled, or can be set via generate_kwargs if needed
-                        # Pass a copy to avoid potential issues
-                        result = hf_pipe(audio_np.copy())
-                        text = result['text'].strip()
-                    elif audio_model:
-                        # Use standard Whisper model
-                        # Use the correct device name for standard whisper check ("cuda" or "cpu")
-                        whisper_device = "cuda" if torch.cuda.is_available() else "cpu"
-                        result = audio_model.transcribe(
-                            audio_np,
-                            fp16=(whisper_device == "cuda"),
-                            language=None if args.non_english else "en"
-                        )
-                        text = result['text'].strip()
-                    else:
-                        # Should not happen if loading checks passed, but include for safety
-                        print("Error: No transcription model available.")
-                        continue  # Skip this loop iteration
-
-                    if len(text) < 2:
-                        if debug_mode:
-                            print(f"Ignoring short result: '{text}'")
-                        continue
-
-                    # Append instead of overwrite
-                    if phrase_complete:
-                        transcriptions.append(text)
-                    else:
-                        transcriptions[-1] = transcriptions[-1].strip() + \
-                            " " + text
-
+                # Skip very small chunks (likely silence)
+                if len(audio_data) < 8000:
                     if debug_mode:
-                        os.system('cls' if os.name == 'nt' else 'clear')
-                        print("\nTranscription so far:")
-                        for line in transcriptions:
-                            print(line)
-                        print(
-                            f"\nVisit http://localhost:{app.config['PORT']} for the web interface.")
+                        print("Skipping small audio chunk (likely silence).")
+                    continue
 
-                    gc.collect()
+                # Convert raw data to float32
+                audio_np = np.frombuffer(
+                    audio_data, dtype=np.int16).astype(np.float32) / 32768.0
 
+                text = ""  # Initialize text
+                if hf_pipe:
+                    # Use Hugging Face pipeline
+                    # The pipeline handles device and dtype automatically based on setup
+                    # Language is also typically handled, or can be set via generate_kwargs if needed
+                    # Pass a copy to avoid potential issues
+                    result = hf_pipe(audio_np.copy())
+                    text = result['text'].strip()
+                elif audio_model:
+                    # Use standard Whisper model
+                    # Use the correct device name for standard whisper check ("cuda" or "cpu")
+                    whisper_device = "cuda" if torch.cuda.is_available() else "cpu"
+                    result = audio_model.transcribe(
+                        audio_np,
+                        fp16=(whisper_device == "cuda"),
+                        language=None if args.non_english else "en"
+                    )
+                    text = result['text'].strip()
                 else:
-                    # No new data
-                    sleep(args.sleep_duration)
-                    idle_count += 1
-                    # Periodic GC
-                    if idle_count > 20:
-                        gc.collect()
-                        idle_count = 0
+                    # Should not happen if loading checks passed, but include for safety
+                    print("Error: No transcription model available.")
+                    continue  # Skip this loop iteration
 
-            except KeyboardInterrupt:
-                break
-            except Exception as e:
-                print(f"Error: {e}")
+                if len(text) < 2:
+                    if debug_mode:
+                        print(f"Ignoring short result: '{text}'")
+                    continue
+
+                # Append instead of overwrite
+                if phrase_complete:
+                    transcriptions.append(text)
+                else:
+                    transcriptions[-1] = transcriptions[-1].strip() + \
+                        " " + text
+
                 if debug_mode:
-                    import traceback
-                    traceback.print_exc()
+                    os.system('cls' if os.name == 'nt' else 'clear')
+                    print("\nTranscription so far:")
+                    for line in transcriptions:
+                        print(line)
+                    print(
+                        f"\nVisit http://localhost:{app.config['PORT']} for the web interface.")
 
-        print("\nFinal Transcription:")
-        for line in transcriptions:
-            print(line)
+                gc.collect()
 
-        print("Cleaning up resources...")
-        del audio_model
-        if torch.cuda.is_available():
-            torch.cuda.empty_cache()
-        gc.collect()
+            else:
+                # No new data
+                sleep(args.sleep_duration)
+                idle_count += 1
+                # Periodic GC
+                if idle_count > 20:
+                    gc.collect()
+                    idle_count = 0
+
+        except KeyboardInterrupt:
+            break
+        except Exception as e:
+            print(f"Error: {e}")
+            if debug_mode:
+                import traceback
+                traceback.print_exc()
+
+    print("\nFinal Transcription:")
+    for line in transcriptions:
+        print(line)
+
+    print("Cleaning up resources...")
+    del audio_model
+    if torch.cuda.is_available():
+        torch.cuda.empty_cache()
+    gc.collect()
 
 
 if __name__ == "__main__":
