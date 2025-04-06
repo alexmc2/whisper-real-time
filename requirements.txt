@@ -6,3 +6,5 @@ Flask
 transformers
 accelerate
 safetensors
+google-generativeai
+dotenv

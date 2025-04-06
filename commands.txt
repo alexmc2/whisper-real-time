@@ -13,8 +13,12 @@ python3 web_output.py --model medium --default_microphone pipewire
 python3 web_output.py --model large --default_microphone pipewire
 python3 web_output.py --model large-v3-turbo --default_microphone pipewire
 
+python3 web_output.py --model large-v3-turbo --default_microphone pipewire --gemini_api_key YOUR_GEMINI_API_KEY
+python3 web_output.py --model large-v3-turbo --default_microphone pipewire --gemini_api_key $(cat .env | grep GEMINI_API_KEY | cut -d= -f2)
 
+python3 web_output.py --model large-v3-turbo --default_microphone pipewire --gemini_api_key $(cat .env | grep GEMINI_API_KEY | cut -d= -f2)
 
+python web_output.py --model large-v3-turbo --default_microphone pipewire --openrouter_api_key $(cat .env | grep OPENROUTER_API_KEY | cut -d= -f2)
 
 http://127.0.0.1:5000
 

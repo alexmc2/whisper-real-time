@@ -828,6 +828,7 @@ def main():
     hf_pipe = None
     # loaded_model_name = args.model # Removed unused variable
 
+    # Find this section in your code (around line 584):
     if args.model == "large-v3-turbo":
         print(f"Loading Hugging Face model openai/whisper-{args.model}...")
         model_id = f"openai/whisper-{args.model}"
@@ -838,37 +839,14 @@ def main():
             warnings.filterwarnings(
                 "ignore", message="You have passed task=transcribe")
 
-            # Add Flash Attention 2 or SDPA acceleration
-            from transformers.utils import is_flash_attn_2_available
-
-            # Modify model loading with advanced attention implementations
-            if is_flash_attn_2_available():
-                print("Flash Attention 2 is available - using for faster inference")
-                hf_model = AutoModelForSpeechSeq2Seq.from_pretrained(
-                    model_id,
-                    torch_dtype=torch_dtype,
-                    low_cpu_mem_usage=True,
-                    use_safetensors=True,
-                    attn_implementation="flash_attention_2"
-                )
-            else:
-                # Fall back to SDPA if available
-                print("Flash Attention 2 not available - using SDPA instead")
-                hf_model = AutoModelForSpeechSeq2Seq.from_pretrained(
-                    model_id,
-                    torch_dtype=torch_dtype,
-                    low_cpu_mem_usage=True,
-                    use_safetensors=True,
-                    attn_implementation="sdpa"  # Use PyTorch's scaled dot-product attention
-                )
-
-            # Enable static cache for better memory efficiency
-            hf_model.generation_config.cache_implementation = "static"
-
+            hf_model = AutoModelForSpeechSeq2Seq.from_pretrained(
+                model_id,
+                torch_dtype=torch_dtype,
+                low_cpu_mem_usage=True,
+                use_safetensors=True
+            )
             hf_model.to(device)
             processor = AutoProcessor.from_pretrained(model_id)
-
-            # Enhanced pipeline with chunking and batching
             hf_pipe = pipeline(
                 "automatic-speech-recognition",
                 model=hf_model,
@@ -876,157 +854,153 @@ def main():
                 feature_extractor=processor.feature_extractor,
                 torch_dtype=torch_dtype,
                 device=device,
-                chunk_length_s=30,  # Optimal for large-v3
-                batch_size=8,  # Adjust based on your GPU memory
             )
-            print(
-                f"Optimized Hugging Face model {model_id} loaded on {device}")
-
+            print(f"Hugging Face model {model_id} loaded on {device}")
+            # loaded_model_name = model_id # Removed unused variable
         except Exception as e:
             print(f"Error loading Hugging Face model {model_id}: {e}")
             print("Please ensure 'transformers', 'torch', 'accelerate', and 'safetensors' are installed correctly.")
             return  # Exit main if HF model fails to load
 
-        else:
-            # Load standard Whisper model
-            print("Loading standard Whisper model, please wait...")
-            model_name = args.model
-            # Apply .en suffix logic only for standard models, exclude large models like large-v2, large-v3
-            if model_name not in ["large", "large-v2", "large-v3"] and not args.non_english:
-                model_name += ".en"
-            try:
-                audio_model = whisper.load_model(model_name)
-                # Use the whisper lib device format ("cuda" or "cpu")
-                whisper_device = "cuda" if torch.cuda.is_available() else "cpu"
-                audio_model.to(whisper_device)
-                print(
-                    f"Standard Whisper model {model_name} loaded on {whisper_device}")
-                # loaded_model_name = model_name # Removed unused variable
-            except Exception as e:
-                print(
-                    f"Error loading standard Whisper model {model_name}: {e}")
-                print("Please ensure 'openai-whisper' is installed correctly.")
-                return  # Exit main if standard model fails to load
+    else:
+        # Load standard Whisper model
+        print("Loading standard Whisper model, please wait...")
+        model_name = args.model
+        # Apply .en suffix logic only for standard models, exclude large models like large-v2, large-v3
+        if model_name not in ["large", "large-v2", "large-v3"] and not args.non_english:
+            model_name += ".en"
+        try:
+            audio_model = whisper.load_model(model_name)
+            # Use the whisper lib device format ("cuda" or "cpu")
+            whisper_device = "cuda" if torch.cuda.is_available() else "cpu"
+            audio_model.to(whisper_device)
+            print(
+                f"Standard Whisper model {model_name} loaded on {whisper_device}")
+            # loaded_model_name = model_name # Removed unused variable
+        except Exception as e:
+            print(f"Error loading standard Whisper model {model_name}: {e}")
+            print("Please ensure 'openai-whisper' is installed correctly.")
+            return  # Exit main if standard model fails to load
 
-        # Check if any model loaded successfully
-        if audio_model is None and hf_pipe is None:
-            print("Failed to load any transcription model. Exiting.")
-            return
+    # Check if any model loaded successfully
+    if audio_model is None and hf_pipe is None:
+        print("Failed to load any transcription model. Exiting.")
+        return
 
-        record_timeout = args.record_timeout
-        phrase_timeout = args.phrase_timeout
+    record_timeout = args.record_timeout
+    phrase_timeout = args.phrase_timeout
 
-        print("Adjusting for ambient noise; please stand by...")
-        with source:
-            recorder.adjust_for_ambient_noise(source)
-        print("Done. Listening...")
+    print("Adjusting for ambient noise; please stand by...")
+    with source:
+        recorder.adjust_for_ambient_noise(source)
+    print("Done. Listening...")
 
-        def record_callback(_, audio: sr.AudioData) -> None:
-            data = audio.get_raw_data()
-            data_queue.put(data)
+    def record_callback(_, audio: sr.AudioData) -> None:
+        data = audio.get_raw_data()
+        data_queue.put(data)
 
-        # We do NOT store the returned function -> no Ruff unused-variable issue
-        recorder.listen_in_background(
-            source, record_callback, phrase_time_limit=record_timeout
-        )
+    # We do NOT store the returned function -> no Ruff unused-variable issue
+    recorder.listen_in_background(
+        source, record_callback, phrase_time_limit=record_timeout
+    )
 
-        idle_count = 0
+    idle_count = 0
 
-        while True:
-            try:
-                now = datetime.now(timezone.utc)
-                if not data_queue.empty():
-                    idle_count = 0
-                    phrase_complete = False
-                    # If enough time has passed between recordings, consider a new line
-                    if phrase_time and now - phrase_time > timedelta(seconds=phrase_timeout):
-                        phrase_complete = True
-                    phrase_time = now
+    while True:
+        try:
+            now = datetime.now(timezone.utc)
+            if not data_queue.empty():
+                idle_count = 0
+                phrase_complete = False
+                # If enough time has passed between recordings, consider a new line
+                if phrase_time and now - phrase_time > timedelta(seconds=phrase_timeout):
+                    phrase_complete = True
+                phrase_time = now
 
-                    audio_data = b''.join(data_queue.queue)
-                    data_queue.queue.clear()
+                audio_data = b''.join(data_queue.queue)
+                data_queue.queue.clear()
 
-                    # Skip very small chunks (likely silence)
-                    if len(audio_data) < 8000:
-                        if debug_mode:
-                            print("Skipping small audio chunk (likely silence).")
-                        continue
-
-                    # Convert raw data to float32
-                    audio_np = np.frombuffer(
-                        audio_data, dtype=np.int16).astype(np.float32) / 32768.0
-
-                    text = ""  # Initialize text
-                    if hf_pipe:
-                        # Use Hugging Face pipeline
-                        # The pipeline handles device and dtype automatically based on setup
-                        # Language is also typically handled, or can be set via generate_kwargs if needed
-                        # Pass a copy to avoid potential issues
-                        result = hf_pipe(audio_np.copy())
-                        text = result['text'].strip()
-                    elif audio_model:
-                        # Use standard Whisper model
-                        # Use the correct device name for standard whisper check ("cuda" or "cpu")
-                        whisper_device = "cuda" if torch.cuda.is_available() else "cpu"
-                        result = audio_model.transcribe(
-                            audio_np,
-                            fp16=(whisper_device == "cuda"),
-                            language=None if args.non_english else "en"
-                        )
-                        text = result['text'].strip()
-                    else:
-                        # Should not happen if loading checks passed, but include for safety
-                        print("Error: No transcription model available.")
-                        continue  # Skip this loop iteration
-
-                    if len(text) < 2:
-                        if debug_mode:
-                            print(f"Ignoring short result: '{text}'")
-                        continue
-
-                    # Append instead of overwrite
-                    if phrase_complete:
-                        transcriptions.append(text)
-                    else:
-                        transcriptions[-1] = transcriptions[-1].strip() + \
-                            " " + text
-
+                # Skip very small chunks (likely silence)
+                if len(audio_data) < 8000:
                     if debug_mode:
-                        os.system('cls' if os.name == 'nt' else 'clear')
-                        print("\nTranscription so far:")
-                        for line in transcriptions:
-                            print(line)
-                        print(
-                            f"\nVisit http://localhost:{app.config['PORT']} for the web interface.")
+                        print("Skipping small audio chunk (likely silence).")
+                    continue
 
-                    gc.collect()
+                # Convert raw data to float32
+                audio_np = np.frombuffer(
+                    audio_data, dtype=np.int16).astype(np.float32) / 32768.0
 
+                text = ""  # Initialize text
+                if hf_pipe:
+                    # Use Hugging Face pipeline
+                    # The pipeline handles device and dtype automatically based on setup
+                    # Language is also typically handled, or can be set via generate_kwargs if needed
+                    # Pass a copy to avoid potential issues
+                    result = hf_pipe(audio_np.copy())
+                    text = result['text'].strip()
+                elif audio_model:
+                    # Use standard Whisper model
+                    # Use the correct device name for standard whisper check ("cuda" or "cpu")
+                    whisper_device = "cuda" if torch.cuda.is_available() else "cpu"
+                    result = audio_model.transcribe(
+                        audio_np,
+                        fp16=(whisper_device == "cuda"),
+                        language=None if args.non_english else "en"
+                    )
+                    text = result['text'].strip()
                 else:
-                    # No new data
-                    sleep(args.sleep_duration)
-                    idle_count += 1
-                    # Periodic GC
-                    if idle_count > 20:
-                        gc.collect()
-                        idle_count = 0
+                    # Should not happen if loading checks passed, but include for safety
+                    print("Error: No transcription model available.")
+                    continue  # Skip this loop iteration
 
-            except KeyboardInterrupt:
-                break
-            except Exception as e:
-                print(f"Error: {e}")
+                if len(text) < 2:
+                    if debug_mode:
+                        print(f"Ignoring short result: '{text}'")
+                    continue
+
+                # Append instead of overwrite
+                if phrase_complete:
+                    transcriptions.append(text)
+                else:
+                    transcriptions[-1] = transcriptions[-1].strip() + \
+                        " " + text
+
                 if debug_mode:
-                    import traceback
-                    traceback.print_exc()
+                    os.system('cls' if os.name == 'nt' else 'clear')
+                    print("\nTranscription so far:")
+                    for line in transcriptions:
+                        print(line)
+                    print(
+                        f"\nVisit http://localhost:{app.config['PORT']} for the web interface.")
 
-        print("\nFinal Transcription:")
-        for line in transcriptions:
-            print(line)
+                gc.collect()
 
-        print("Cleaning up resources...")
-        del audio_model
-        if torch.cuda.is_available():
-            torch.cuda.empty_cache()
-        gc.collect()
+            else:
+                # No new data
+                sleep(args.sleep_duration)
+                idle_count += 1
+                # Periodic GC
+                if idle_count > 20:
+                    gc.collect()
+                    idle_count = 0
+
+        except KeyboardInterrupt:
+            break
+        except Exception as e:
+            print(f"Error: {e}")
+            if debug_mode:
+                import traceback
+                traceback.print_exc()
+
+    print("\nFinal Transcription:")
+    for line in transcriptions:
+        print(line)
+
+    print("Cleaning up resources...")
+    del audio_model
+    if torch.cuda.is_available():
+        torch.cuda.empty_cache()
+    gc.collect()
 
 
 if __name__ == "__main__":

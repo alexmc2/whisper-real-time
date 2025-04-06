@@ -4,7 +4,7 @@
 
 This is a demo of real time speech to text with OpenAI's Whisper model. It works by constantly recording audio in a thread and concatenating the raw bytes over multiple recordings.
 
-To install dependencies simply run
+To install dependencies simply r
 
 ```bash
 pip install -r requirements.txt
@@ -54,7 +54,7 @@ This will start a web server at <http://localhost:5000> where you can view and i
 To run the application with output directly in your terminal:
 
 ```bash
-python whisper_demo.py
+python transcibe_demo.py
 ```
 
 This will display the transcriptions directly in your terminal window.
