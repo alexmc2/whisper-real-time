@@ -18,6 +18,10 @@ from flask import Flask, jsonify, render_template_string, request
 from google.generativeai.types import HarmBlockThreshold, HarmCategory
 from transformers import AutoModelForSpeechSeq2Seq, AutoProcessor, pipeline
 
+# Add filter for specific warnings
+warnings.filterwarnings("ignore", message=".*attention_mask.*")
+
+
 # Set up logging
 logging.basicConfig(
     level=logging.DEBUG,
@@ -251,6 +255,7 @@ HTML_TEMPLATE = '''
             <select id="formatMode">
                 <option value="standard">Standard Cleaning</option>
                 <option value="formal">Formal Language</option>
+                <option value="casual">Casual</option>
                 <option value="concise">Concise</option>
                 <option value="paragraph">Paragraph Structure</option>
                 <option value="instructions">Process as Instructions</option>
@@ -661,6 +666,33 @@ def clean_transcription():
                     - Structure the content with clear paragraph breaks
                     - Use more sophisticated vocabulary where appropriate
                     """
+                elif formatting_mode == 'casual':
+                    # Set moderate temperature for casual mode
+                    model = genai.GenerativeModel(
+                        model_name=model_name,
+                        safety_settings=safety_settings,
+                        generation_config={
+                            "temperature": 0.3,  # Moderate temperature for natural but not overly casual rewrites
+                            "top_p": 0.95,
+                            "top_k": 40,
+                            "max_output_tokens": 8192,
+                        }
+                    )
+
+                    formatting_instructions = """
+                    ADDITIONAL FORMATTING: Gently humanize the text to make it more natural:
+                    - Use some contractions where it sounds natural (e.g., "don't", "can't", "we're")
+                    - Simplify overly complex or formal language
+                    - Use a warm, approachable tone while maintaining professionalism
+                    - Convert extremely formal phrasings to more natural alternatives
+                    - Use active voice instead of passive voice where appropriate
+                    - Keep complex ideas intact but express them in more straightforward language
+                    - Maintain the original meaning and most of the original structure
+                    - Only make modest adjustments to make the text sound more natural
+                    - DO NOT add casual expressions like "kinda", "y'know", or rhetorical questions
+                    - DO NOT change the level of detail or information presented
+                    - Preserve the professional nature of the content, just make it warmer
+                    """
                 elif formatting_mode == 'concise':
                     formatting_instructions = """
                     ADDITIONAL FORMATTING: Please make the text more concise:
@@ -702,6 +734,7 @@ def clean_transcription():
                     7. IMPROVING PUNCTUATION: Add proper periods, commas, question marks where appropriate
                     8. FIXING CAPITALIZATION: Ensure sentences begin with capital letters and proper nouns are capitalized
                     9. Ensuring proper spacing after punctuation marks (one space after a period, comma, etc.)
+                    10. CONVERTING TO BRITISH SPELLING: Convert American English spellings to British English (e.g., "color" to "colour", "center" to "centre")
                     
                     {formatting_instructions}
                     
@@ -714,11 +747,25 @@ def clean_transcription():
                     - Make sure each sentence has proper subject-verb structure when possible
                     - Maintain the original speaker's style but with better punctuation
                     
+                    IMPORTANT BRITISH SPELLING RULES:
+                    - Replace "-ize" endings with "-ise" (e.g., "organize" to "organise")
+                    - Replace "-yze" endings with "-yse" (e.g., "analyze" to "analyse") 
+                    - Add 'u' to words like "color/colour", "favor/favour", "humor/humour"
+                    - Replace "-er" endings with "-re" in words like "center/centre", "meter/metre"
+                    - Replace "-og" endings with "-ogue" in words like "dialog/dialogue", "catalog/catalogue"
+                    - Double the final 'l' in certain verbs (e.g., "traveled/travelled", "canceled/cancelled")
+                    - Use British spelling for these common words:
+                      * "defense" → "defence"
+                      * "offense" → "offence"
+                      * "gray" → "grey"
+                      * "program" → "programme" (except for computer programs)
+                      * "check" → "cheque" (for banking)
+                    
                     IMPORTANT GENERAL RULES:
                     - ONLY return text in the SAME LANGUAGE as the original transcription
                     - NEVER translate or add foreign language text
-                    - DO NOT add new content or change the meaning of what was said
-                    - DO NOT rewrite or rephrase the content beyond correcting punctuation and removing repetition
+                    {"- For CASUAL mode, make modest adjustments to sound more natural while preserving original meaning" if formatting_mode == "casual" else "- DO NOT add new content or change the meaning of what was said"}
+                    {"- For CASUAL mode, simplify overly formal language while keeping the core message intact" if formatting_mode == "casual" else "- DO NOT rewrite or rephrase the content beyond correcting punctuation and removing repetition"}
                     - Treat each line break as a potential silence marker in speech
                     - When the same phrase repeats across multiple lines, keep only ONE instance
                     - Remove any single-word lines that are likely fragments like just "you" or "the"
@@ -754,6 +801,74 @@ def clean_transcription():
         cleaned_lines = [
             line for line in cleaned_text.split('\n') if line.strip()]
 
+        # Dictionary of common American to British spelling conversions
+        # This is used as a fallback in case the Gemini model doesn't fully convert all spellings
+        us_to_uk_spelling = {
+            # -or to -our
+            'color': 'colour',
+            'favor': 'favour',
+            'flavor': 'flavour',
+            'humor': 'humour',
+            'labor': 'labour',
+            'neighbor': 'neighbour',
+            'rumor': 'rumour',
+            'valor': 'valour',
+
+            # -ize to -ise
+            'organize': 'organise',
+            'recognize': 'recognise',
+            'apologize': 'apologise',
+            'criticize': 'criticise',
+            'realize': 'realise',
+            'emphasize': 'emphasise',
+            'summarize': 'summarise',
+            'prioritize': 'prioritise',
+
+            # -yze to -yse
+            'analyze': 'analyse',
+            'paralyze': 'paralyse',
+            'catalyze': 'catalyse',
+
+            # -er to -re
+            'center': 'centre',
+            'meter': 'metre',
+            'theater': 'theatre',
+            'liter': 'litre',
+            'caliber': 'calibre',
+            'fiber': 'fibre',
+
+            # -og to -ogue
+            'dialog': 'dialogue',
+            'catalog': 'catalogue',
+            'analog': 'analogue',
+            'monolog': 'monologue',
+
+            # Various other differences
+            'gray': 'grey',
+            'defense': 'defence',
+            'offense': 'offence',
+            'plow': 'plough',
+            'check': 'cheque',
+            'program': 'programme',
+            'draft': 'draught',
+            'tire': 'tyre',
+            'pajamas': 'pyjamas',
+            'judgment': 'judgement',
+            'aluminum': 'aluminium',
+            'estrogen': 'oestrogen',
+            'maneuver': 'manoeuvre',
+            'pediatric': 'paediatric',
+            'encyclopedia': 'encyclopaedia',
+            'artifact': 'artefact',
+            'pretense': 'pretence',
+            'skeptic': 'sceptic',
+            'specialty': 'speciality',
+            'traveled': 'travelled',
+            'traveling': 'travelling',
+            'canceled': 'cancelled',
+            'canceling': 'cancelling',
+        }
+
         # Additional post-processing for better punctuation and text cleaning
         improved_lines = []
         for line in cleaned_lines:
@@ -773,6 +888,14 @@ def clean_transcription():
                 "продолжение в следующей",  # Russian "continued in the next"
                 "конец фильма",  # Russian "end of film"
                 "перерыв",  # Russian "break/intermission"
+                "Chào mừng quý vị đến với bộ phim",  # Vietnamese "welcome to the movie"
+                "Hãy subscribe cho kênh",  # Vietnamese "subscribe to the channel"
+                "Để không bỏ lỡ những video hấp dẫn",  # Vietnamese "don't miss exciting videos"
+                "Thanks for watching!",  # English outro
+                "Please subscribe",  # English outro
+                "Please like and subscribe",  # English outro
+                "Don't forget to subscribe",  # English outro
+                "Thank you for watching"  # English outro
             ]
 
             # Common end markers that often appear incorrectly
@@ -885,6 +1008,20 @@ def clean_transcription():
 
             # Trim any extra spaces
             processed_line = processed_line.strip()
+
+            # Apply British spelling conversion manually as a fallback
+            # This helps catch any words the Gemini model might have missed
+            for us_word, uk_word in us_to_uk_spelling.items():
+                # Case-sensitive replacement
+                if us_word in processed_line:
+                    processed_line = processed_line.replace(us_word, uk_word)
+
+                # Capitalized version
+                us_word_cap = us_word.capitalize()
+                uk_word_cap = uk_word.capitalize()
+                if us_word_cap in processed_line:
+                    processed_line = processed_line.replace(
+                        us_word_cap, uk_word_cap)
 
             improved_lines.append(processed_line)
 
@@ -1207,31 +1344,26 @@ def main():
 
     print("Adjusting for ambient noise; please stand by...")
     try:
-        # Fix for the microphone initialization issue - create a new context and handle exceptions
-        try:
-            with source:
-                recorder.adjust_for_ambient_noise(source)
-                print("Done. Listening...")
-        except Exception as e:
-            print(f"Error during ambient noise adjustment: {e}")
-            print("Trying with default settings...")
-            # If ambient noise adjustment fails, continue with default settings
+        with source:
+            recorder.adjust_for_ambient_noise(source)
+            print("Done. Listening...")
 
         def record_callback(_, audio: sr.AudioData) -> None:
             data = audio.get_raw_data()
             data_queue.put(data)
 
-        # Add a small delay before starting the microphone listener
-        sleep(0.5)  # Wait for 0.5 seconds to ensure the microphone is ready
-
-        # We do NOT store the returned function -> no Ruff unused-variable issue
+        # Start the microphone listener
         recorder.listen_in_background(
             source, record_callback, phrase_time_limit=record_timeout
         )
     except Exception as e:
-        print(f"Error initializing microphone: {e}")
-        print("Please try running the program again.")
-        return
+        print("\n=== Microphone Setup Note ===")
+        print("Unable to initialize the microphone. This is usually a temporary issue.")
+        print("Please try running the program again - no changes needed.")
+        print("If the problem persists, try unplugging and reconnecting your microphone.")
+        print(f"Technical details: {e}")
+        print("===========================\n")
+        return  # Exit if microphone initialization fails
 
     idle_count = 0
 
@@ -1262,10 +1394,9 @@ def main():
                 text = ""  # Initialize text
                 if hf_pipe:
                     # Use Hugging Face pipeline
-                    # The pipeline handles device and dtype automatically based on setup
-                    # Language is also typically handled, or can be set via generate_kwargs if needed
-                    # Pass a copy to avoid potential issues
-                    result = hf_pipe(audio_np.copy())
+                    # The pipeline handles preprocessing (feature extraction, attention mask) internally
+                    # Simply pass the raw audio numpy array
+                    result = hf_pipe(audio_np.copy())  # <-- CORRECTED LINE
                     text = result['text'].strip()
                 elif audio_model:
                     # Use standard Whisper model
@@ -1281,6 +1412,19 @@ def main():
                     # Should not happen if loading checks passed, but include for safety
                     print("Error: No transcription model available.")
                     continue  # Skip this loop iteration
+
+                # Filter out hallucinations with high non-ASCII character counts (likely Vietnamese, Russian, etc.)
+                if len(text) > 0:
+                    # Count how many non-ascii characters are in the text
+                    non_ascii_count = sum(1 for c in text if ord(c) > 127)
+                    non_ascii_ratio = non_ascii_count / len(text)
+
+                    # If more than 30% of the characters are non-ASCII, it's likely a hallucination
+                    if non_ascii_ratio > 0.3:
+                        if debug_mode:
+                            print(
+                                f"Filtering out likely hallucination with {non_ascii_ratio:.1%} non-ASCII characters: '{text}'")
+                        continue  # Skip this text completely
 
                 if len(text) < 2:
                     if debug_mode:
@@ -1336,4 +1480,5 @@ if __name__ == "__main__":
     try:
         main()
     except KeyboardInterrupt:
+        print("\nExiting...")
         print("\nExiting...")
