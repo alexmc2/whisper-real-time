@@ -1,3 +1,5 @@
+import logging
+
 import google.generativeai as genai
 from google.generativeai.types import HarmBlockThreshold, HarmCategory
 
@@ -438,7 +440,7 @@ def clean_transcription(
             else ["[Cleaned transcription - no significant content detected]"]
         )
 
-        if logger.isEnabledFor(logger.DEBUG):
+        if logger.isEnabledFor(logging.DEBUG):
             original_sample = "\n".join(
                 state.original_transcriptions[:3]
                 if len(state.original_transcriptions) > 3

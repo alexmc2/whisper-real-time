@@ -322,6 +322,7 @@ def main():
         return
 
     idle_count = 0
+    last_logged_text = None
 
     while True:
         try:
@@ -391,6 +392,15 @@ def main():
                     for line in state.transcriptions:
                         print(line)
                     print(f"\nVisit http://localhost:{app.config['PORT']} for the web interface.")
+
+                current_line = state.transcriptions[-1].strip()
+                if (
+                    current_line
+                    and current_line != DEFAULT_WAITING_MESSAGE
+                    and current_line != last_logged_text
+                ):
+                    logger.info("Transcript update: %s", current_line)
+                    last_logged_text = current_line
 
                 gc.collect()
 
