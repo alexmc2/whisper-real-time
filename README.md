@@ -6,7 +6,7 @@ This is a demo of real time speech to text with OpenAI's Whisper model. It works
 
 ## Setup
 
-Create and activate a virtual environment (optional but recommended), then install dependencies:
+Create and activate a virtual environment, then install dependencies:
 
 ```bash
 python3 -m venv whisper_venv
@@ -72,44 +72,5 @@ OpenRouter example:
 python web_output.py --model large-v3-turbo --default_microphone pipewire --openrouter_api_key "$(cat .env | grep OPENROUTER_API_KEY | cut -d= -f2)"
 ```
 
-GPU run (while waiting for the NVIDIA blank screen fix):
 
-```bash
-prime-run python3 web_output.py \
-  --model large-v3-turbo \
-  --default_microphone pipewire \
-  --gemini_api_key "$(grep GEMINI_API_KEY .env | cut -d= -f2)"
-```
 
-### Terminal Mode
-
-To run the application with output directly in your terminal:
-
-```bash
-python3 transcribe_demo.py
-```
-
-Model-specific runs (pipewire microphone):
-
-```bash
-python3 transcribe_demo.py --model tiny --default_microphone pipewire
-python3 transcribe_demo.py --model base --default_microphone pipewire
-python3 transcribe_demo.py --model small --default_microphone pipewire
-python3 transcribe_demo.py --model medium --default_microphone pipewire
-python3 transcribe_demo.py --model large --default_microphone pipewire
-```
-
-### Monitoring and maintenance
-
-Run transcription in one terminal, then monitor in another:
-
-```bash
-python transcribe_demo.py --model tiny
-python monitor_resources.py --name python3
-```
-
-Free the web port if needed:
-
-```bash
-echo "sudo kill -9 $(lsof -ti:5000)"
-```
